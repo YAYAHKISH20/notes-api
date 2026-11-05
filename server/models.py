@@ -1,3 +1,5 @@
+"""Database models: User (who logs in) and Note (the resource each user owns)."""
+
 from datetime import datetime
 
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -7,42 +9,53 @@ from config import bcrypt, db
 
 
 class User(db.Model):
+    """An account that can log in. Each user owns many notes."""
+
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String, unique=True, nullable=False)
+    # Only the bcrypt hash is stored, never the plain password.
     _password_hash = db.Column(db.String, nullable=False)
 
+    # Deleting a user also deletes their notes.
     notes = db.relationship(
         "Note", back_populates="user", cascade="all, delete-orphan"
     )
 
     @hybrid_property
     def password_hash(self):
+        """Block reading the hash, so it can't leak into responses or logs."""
         raise AttributeError("Password hashes may not be viewed.")
 
     @password_hash.setter
     def password_hash(self, password):
+        """Hash a plain password with bcrypt and store only the hash."""
         self._password_hash = bcrypt.generate_password_hash(
             password.encode("utf-8")
         ).decode("utf-8")
 
     def authenticate(self, password):
+        """Return True if the given plain password matches the stored hash."""
         return bcrypt.check_password_hash(
             self._password_hash, password.encode("utf-8")
         )
 
     @validates("username")
     def validate_username(self, key, value):
+        """Reject blank usernames and trim surrounding spaces."""
         if not value or not value.strip():
             raise ValueError("Username is required.")
         return value.strip()
 
     def to_dict(self):
+        """Public JSON for a user. The password hash is deliberately left out."""
         return {"id": self.id, "username": self.username}
 
 
 class Note(db.Model):
+    """A note owned by a single user."""
+
     __tablename__ = "notes"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -58,11 +71,13 @@ class Note(db.Model):
 
     @validates("title", "content")
     def validate_text(self, key, value):
+        """Reject a missing or blank title or content."""
         if not value or not str(value).strip():
             raise ValueError(f"{key.capitalize()} is required.")
         return value
 
     def to_dict(self):
+        """JSON for a note, with timestamps as ISO strings."""
         return {
             "id": self.id,
             "title": self.title,
