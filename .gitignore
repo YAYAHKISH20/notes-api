@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
-*.db
-instance/
 .venv/
-cookies.txt
+.env
+instance/
+*.db
+.pytest_cache/
