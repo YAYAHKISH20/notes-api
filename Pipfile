@@ -4,14 +4,19 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-flask = "*"
-flask-sqlalchemy = "*"
-flask-migrate = "*"
-flask-restful = "*"
-flask-bcrypt = "*"
-faker = "*"
+flask = "2.2.2"
+flask-sqlalchemy = "3.0.3"
+Werkzeug = "2.2.2"
+marshmallow = "3.20.1"
+faker = "15.3.2"
+flask-migrate = "4.0.0"
+flask-restful = "0.3.9"
+importlib-metadata = "6.0.0"
+importlib-resources = "5.10.0"
+pytest = "7.2.0"
+flask-bcrypt = "1.0.1"
 
 [dev-packages]
 
 [requires]
-python_version = "3"
+python_version = "3.8"
