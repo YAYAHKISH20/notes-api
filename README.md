@@ -1,90 +1,81 @@
-give me full code for each
-# Notes API — Full Auth Flask Backend
+# Notes API - Full Auth Flask Backend
 
-A secure RESTful Flask API for a personal notes app. Users sign up and log in with **session-based authentication** (signed cookies), then create, read, update and delete their own notes. Every note belongs to one user, and users can never see or change anyone else's notes. The notes index is paginated. Passwords are hashed with Flask-Bcrypt and are never stored or returned in plain text.
+A secure RESTful Flask API for a personal notes app. Users sign up and log in with **session-based authentication**, then create, read, update and delete their own notes. Every note belongs to one user, and users can never see or change anyone else's notes. The notes index is paginated. Passwords are hashed with Flask-Bcrypt and are never stored or returned in plain text.
 
-Built to work with the **session** version of the provided frontend client.
+Built to work with the **client-with-sessions** frontend from the course repo.
 
 ## Tech stack
 
-Flask 2.2 · Flask-RESTful · Flask-SQLAlchemy · Flask-Migrate · Flask-Bcrypt · Marshmallow · Faker · SQLite
+Flask 2.2 · Flask-RESTful · Flask-SQLAlchemy · Flask-Migrate · Flask-Bcrypt · Faker · SQLite
 
 ## Project structure
 
 ```
 notes-api/
-├── Pipfile
+├── Pipfile / Pipfile.lock
 ├── README.md
 └── server/
-    ├── app.py          # routes / resources + auth decorator
-    ├── config.py       # app, db, bcrypt, migrate, api setup
-    ├── models.py       # User + Note models and Marshmallow schemas
-    ├── seed.py         # demo data
-    └── migrations/     # Flask-Migrate (Alembic) migrations
+    ├── app.py        # auth routes and notes CRUD
+    ├── config.py     # Flask app, database, bcrypt and API setup
+    ├── models.py     # User and Note models
+    ├── seed.py       # demo users and notes
+    └── migrations/   # Flask-Migrate files
 ```
 
 ## Installation
 
-Requires Python 3.8+ and Pipenv.
-
 ```bash
-git clone <your-repo-url>
-cd notes-api
 pipenv install
 pipenv shell
-```
-
-Set up and seed the database:
-
-```bash
 cd server
 export FLASK_APP=app.py
-flask db upgrade      # applies the existing migrations
-python seed.py        # creates 2 demo users with 15 notes each
+flask db upgrade
+python seed.py
 ```
 
-Demo logins after seeding: `alice` / `password123` and `bob` / `password123`.
+`flask db upgrade` creates the database from the included migrations. `seed.py` wipes the data and adds two demo users with 15 notes each:
 
-> If you change the models later: `flask db migrate -m "describe change"` then `flask db upgrade`.
+- `alice` / `password123`
+- `bob` / `password123`
 
-## Running the app
+Werkzeug is pinned to 2.3.8 because 2.2.2 does not run on Python 3.12 or newer.
 
-From the `server/` folder:
+## Running the server
+
+From the `server` folder, with the pipenv shell active:
 
 ```bash
 python app.py
 ```
 
-The API runs at **http://localhost:5555**. (`flask run --port 5555` works too.)
-
-Optional environment variables: `SECRET_KEY` (signs the session cookie — set this in production) and `DATABASE_URI` (defaults to SQLite).
+The API runs at `http://localhost:5555`, the port the session client's proxy expects.
 
 ## Endpoints
 
-All request and response bodies are JSON. Notes endpoints require a logged-in session; otherwise they return `401`.
+All request and response bodies are JSON. Errors come back as `{"errors": ["message"]}`.
 
 ### Auth
 
-| Method | Path | Description | Success |
-|---|---|---|---|
-| POST | `/signup` | Create an account and log in. Body: `{"username", "password", "password_confirmation"?}`. Username 3–50 chars, password ≥ 6 chars. | `201` user |
-| POST | `/login` | Log in. Body: `{"username", "password"}`. | `200` user |
-| GET | `/check_session` | Return the logged-in user (used to keep users logged in on refresh). | `200` user |
-| DELETE | `/logout` | Log out and clear the session. | `204` |
+| Method | Path | Body | Success | Description |
+|---|---|---|---|---|
+| POST | `/signup` | `username`, `password`, `password_confirmation` (optional) | 201 + user | Creates an account and logs the user in |
+| POST | `/login` | `username`, `password` | 200 + user | Logs in and starts a session |
+| GET | `/check_session` | none | 200 + user | Returns the logged-in user, or `{}` with 401 |
+| DELETE | `/logout` | none | 204 | Ends the session |
 
-User JSON: `{"id": 1, "username": "alice"}`
+A user is returned as `{"id": 1, "username": "alice"}`.
 
-### Notes (owned by the logged-in user)
+### Notes (login required)
 
-| Method | Path | Description | Success |
-|---|---|---|---|
-| GET | `/notes?page=1&per_page=10` | Paginated list of **your** notes, newest first. `per_page` max 50. | `200` |
-| POST | `/notes` | Create a note. Body: `{"title", "content"}`. | `201` note |
-| GET | `/notes/<id>` | Get one of your notes. | `200` note |
-| PATCH | `/notes/<id>` | Update `title` and/or `content` of one of your notes. | `200` note |
-| DELETE | `/notes/<id>` | Delete one of your notes. | `204` |
+| Method | Path | Body | Success | Description |
+|---|---|---|---|---|
+| GET | `/notes?page=1&per_page=10` | none | 200 | The logged-in user's notes, newest first, paginated |
+| POST | `/notes` | `title`, `content` | 201 + note | Creates a note owned by the logged-in user |
+| GET | `/notes/<id>` | none | 200 + note | Returns one of your notes |
+| PATCH | `/notes/<id>` | `title` and/or `content` | 200 + note | Updates one of your notes |
+| DELETE | `/notes/<id>` | none | 204 | Deletes one of your notes |
 
-Paginated response:
+`page` defaults to 1 and `per_page` defaults to 10 (maximum 100). The index response looks like:
 
 ```json
 {
@@ -92,30 +83,35 @@ Paginated response:
   "per_page": 10,
   "total": 15,
   "total_pages": 2,
-  "notes": [
+  "items": [
     {
       "id": 15,
-      "title": "Grocery list",
-      "content": "Milk, eggs, coffee",
-      "created_at": "2026-11-05T18:44:34",
-      "updated_at": "2026-11-05T18:44:34",
+      "title": "Example title",
+      "content": "Example content",
+      "created_at": "2026-11-05T20:00:00",
+      "updated_at": "2026-11-05T20:00:00",
       "user_id": 1
     }
   ]
 }
 ```
 
-### Errors
+### Error codes
 
-| Status | When |
+| Code | Meaning |
 |---|---|
-| `400` | Invalid pagination params (e.g. `page=0`) |
-| `401` | Not logged in, or wrong username/password |
-| `404` | Note doesn't exist **or belongs to another user** (the API doesn't reveal which) |
-| `422` | Validation failed (missing/blank title or content, short password, taken username) |
+| `401` | Not logged in, or wrong username or password |
+| `404` | Note doesn't exist or belongs to another user (the API doesn't reveal which) |
+| `422` | Validation failed: missing or blank fields, passwords don't match, or username already taken |
 
 ## Security notes
 
-- Passwords are hashed with bcrypt; the hash is write-only on the model and never serialized.
+- Passwords are hashed with bcrypt. The hash can't be read from the model and is never included in responses.
 - A note's owner is always taken from the session, never from the request body.
-- Every note query is filtered by the current user's id, so other users' notes are unreachable.
+- Every note lookup is filtered by the logged-in user's id, so other users' notes can't be read, edited or deleted.
+
+## Testing with the frontend
+
+1. Start this API with `python app.py` (port 5555).
+2. In the course repo's `client-with-sessions` folder, run `npm install` then `npm start`.
+3. Open `http://localhost:4000` and sign up or log in as `alice` / `password123`.
