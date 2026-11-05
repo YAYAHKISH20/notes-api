@@ -1,3 +1,9 @@
+"""Notes API: session-based authentication and user-owned notes.
+
+Auth routes manage the login session. Note routes require a logged-in user,
+and each user can only read or change their own notes.
+"""
+
 from flask import request, session
 from flask_restful import Resource
 from sqlalchemy.exc import IntegrityError
@@ -7,12 +13,18 @@ from models import Note, User
 
 
 def current_user():
+    """Return the logged-in User from the session, or None if nobody is logged in."""
     user_id = session.get("user_id")
     return db.session.get(User, user_id) if user_id else None
 
 
 class Signup(Resource):
     def post(self):
+        """Create a new account, log the user in, and return the user (201).
+
+        Returns 422 if fields are missing, the passwords don't match,
+        or the username is already taken.
+        """
         data = request.get_json() or {}
         username = data.get("username")
         password = data.get("password")
@@ -22,7 +34,7 @@ class Signup(Resource):
             return {"errors": ["Passwords do not match."]}, 422
         try:
             user = User(username=username)
-            user.password_hash = password
+            user.password_hash = password  # the setter stores a bcrypt hash, never the plain password
             db.session.add(user)
             db.session.commit()
         except IntegrityError:
@@ -37,6 +49,7 @@ class Signup(Resource):
 
 class CheckSession(Resource):
     def get(self):
+        """Return the logged-in user so the frontend can stay logged in after a refresh, or 401."""
         user = current_user()
         if not user:
             return {}, 401
@@ -45,16 +58,19 @@ class CheckSession(Resource):
 
 class Login(Resource):
     def post(self):
+        """Check the username and password, start a session, and return the user. 401 on failure."""
         data = request.get_json() or {}
         user = User.query.filter_by(username=data.get("username")).first()
         if user and user.authenticate(data.get("password", "")):
             session["user_id"] = user.id
             return user.to_dict(), 200
+        # Same message for unknown user and wrong password, so usernames can't be probed.
         return {"errors": ["Invalid username or password."]}, 401
 
 
 class Logout(Resource):
     def delete(self):
+        """End the session. Returns 204, or 401 if nobody was logged in."""
         if not session.get("user_id"):
             return {"errors": ["Not logged in."]}, 401
         session.pop("user_id", None)
@@ -63,6 +79,10 @@ class Logout(Resource):
 
 class NotesIndex(Resource):
     def get(self):
+        """List the logged-in user's notes, newest first, paginated.
+
+        Query params: page (default 1) and per_page (default 10, max 100).
+        """
         user = current_user()
         if not user:
             return {"errors": ["Unauthorized"]}, 401
@@ -82,11 +102,14 @@ class NotesIndex(Resource):
         }, 200
 
     def post(self):
+        """Create a note owned by the logged-in user. Returns 201, or 422 if title/content is missing."""
         user = current_user()
         if not user:
             return {"errors": ["Unauthorized"]}, 401
         data = request.get_json() or {}
         try:
+            # user_id comes from the session, never from the request body,
+            # so nobody can create notes for another user.
             note = Note(
                 title=data.get("title"), content=data.get("content"), user_id=user.id
             )
@@ -100,6 +123,12 @@ class NotesIndex(Resource):
 
 class NoteByID(Resource):
     def _get_owned(self, id):
+        """Find a note that belongs to the logged-in user.
+
+        Returns (note, None) on success, or (None, error_response).
+        Another user's note returns 404 rather than 403, so the API
+        doesn't reveal that the note exists.
+        """
         user = current_user()
         if not user:
             return None, ({"errors": ["Unauthorized"]}, 401)
@@ -109,10 +138,12 @@ class NoteByID(Resource):
         return note, None
 
     def get(self, id):
+        """Return one of the logged-in user's notes."""
         note, err = self._get_owned(id)
         return err if err else (note.to_dict(), 200)
 
     def patch(self, id):
+        """Update the title and/or content of one of the logged-in user's notes."""
         note, err = self._get_owned(id)
         if err:
             return err
@@ -128,6 +159,7 @@ class NoteByID(Resource):
         return note.to_dict(), 200
 
     def delete(self, id):
+        """Delete one of the logged-in user's notes. Returns 204."""
         note, err = self._get_owned(id)
         if err:
             return err
